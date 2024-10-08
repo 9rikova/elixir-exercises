@@ -52,39 +52,39 @@ defmodule SudokuSolver do
   def solve(sudoku, format \\ :list, method \\ :sync)
   def solve(sudoku, format, method) when is_list(sudoku), do: solve(Matrix.from_list(sudoku), format, method)
   def solve(sudoku, format, method) when is_map(sudoku) do
-    unless do_validate_sudoku(sudoku), do: raise(ArgumentError, message: "Invalid Sudoku")
+    unless validate_sudoku(sudoku), do: raise(ArgumentError, message: "Invalid Sudoku")
     case {format, method} do
-      {:list, :sync}  -> do_sync_solve(sudoku) |> Matrix.to_list()
-      {:map, :sync}   -> do_sync_solve(sudoku)
-      {:list, :async} -> do_async_solve(sudoku) |> Matrix.to_list()
-      {:map, :async}  -> do_async_solve(sudoku)
+      {:list, :sync}  -> sudoku |> sync_solve() |> Matrix.to_list()
+      {:map, :sync}   -> sync_solve(sudoku)
+      {:list, :async} -> sudoku |> async_solve() |> Matrix.to_list()
+      {:map, :async}  -> async_solve(sudoku)
     end
   end
 
-  defp do_sync_solve(sudoku) do
-    case do_find_empty_field(sudoku) do
+  defp sync_solve(sudoku) do
+    case find_empty_field(sudoku) do
       nil -> sudoku
       {row, col} -> 
         Enum.find_value(1..9, fn n ->
-          if do_possible?(sudoku, row, col, n), do: do_sync_solve(put_in(sudoku[row][col], n))
+          if possible_number?(sudoku, row, col, n), do: sync_solve(put_in(sudoku[row][col], n))
         end)
     end
   end
 
-  defp do_async_solve(sudoku) do
-    case do_find_empty_field(sudoku) do
+  defp async_solve(sudoku) do
+    case find_empty_field(sudoku) do
       nil -> sudoku
       {row, col} ->
-        case do_find_possible_numbers(sudoku, row, col) do
+        case find_possible_numbers(sudoku, row, col) do
           [] -> nil
           possible_numbers -> 
-            Task.async_stream(possible_numbers, fn n -> do_async_solve(put_in(sudoku[row][col], n)) end)
+            Task.async_stream(possible_numbers, fn n -> async_solve(put_in(sudoku[row][col], n)) end)
             |> Enum.find_value(fn result -> elem(result, 1) end)
         end
     end
   end
 
-  defp do_find_empty_field(sudoku) do
+  defp find_empty_field(sudoku) do
     Enum.find_value(@coords, fn row ->
       Enum.find_value(@coords, fn col ->
         if sudoku[row][col] == 0, do: {row, col}
@@ -92,11 +92,11 @@ defmodule SudokuSolver do
     end)
   end
 
-  defp do_find_possible_numbers(sudoku, row_coord, col_coord) do
-    Enum.filter(1..9, &(do_possible?(sudoku, row_coord, col_coord, &1)))
+  defp find_possible_numbers(sudoku, row_coord, col_coord) do
+    Enum.filter(1..9, &(possible_number?(sudoku, row_coord, col_coord, &1)))
   end
 
-  defp do_possible?(sudoku, row_coord, col_coord, n) do
+  defp possible_number?(sudoku, row_coord, col_coord, n) do
     row_valid = Enum.all?(@coords, fn col -> sudoku[row_coord][col] != n end)
     col_valid = Enum.all?(@coords, fn row -> sudoku[row][col_coord] != n end)
 
@@ -110,7 +110,7 @@ defmodule SudokuSolver do
     row_valid && col_valid && square_valid
   end
 
-  defp do_validate_sudoku(sudoku) do
+  defp validate_sudoku(sudoku) do
     valid_row_size = Enum.all?(Map.values(sudoku), fn row -> is_map(row) && Enum.count(Map.keys(row)) == 9 end)
     valid_col_size = (sudoku |> Map.keys() |> Enum.count()) == 9
     
@@ -118,7 +118,7 @@ defmodule SudokuSolver do
       Enum.all?(@coords, fn row ->
         Enum.all?(@coords, fn col ->
           num = sudoku[row][col]
-          (num in 0..9) && (num == 0 || do_possible?(put_in(sudoku[row][col], 0), row, col, num))
+          (num in 0..9) && (num == 0 || possible_number?(put_in(sudoku[row][col], 0), row, col, num))
         end)
       end)
 
